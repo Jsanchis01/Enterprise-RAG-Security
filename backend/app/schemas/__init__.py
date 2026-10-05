@@ -19,6 +19,12 @@ from app.schemas.rag import (
     RetrievalQuery,
     RetrievalResponse,
 )
+from app.schemas.generation import (
+    RAGQueryRequest,
+    RAGQueryResponse,
+    SourceChunk,
+    SecurityValidationSummaryResponse,
+)
 
 __all__ = [
     "UserCreate",
@@ -36,4 +42,8 @@ __all__ = [
     "RetrievedChunkMetadata",
     "RetrievalQuery",
     "RetrievalResponse",
+    "RAGQueryRequest",
+    "RAGQueryResponse",
+    "SourceChunk",
+    "SecurityValidationSummaryResponse",
 ]
