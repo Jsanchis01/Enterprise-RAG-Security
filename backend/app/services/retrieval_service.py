@@ -1,5 +1,6 @@
 from typing import Any, Dict, List, Optional
 from qdrant_client.http.models import Filter
+from sqlalchemy.orm import Session
 from app.schemas.rag import RetrievedChunk, RetrievalResponse
 from app.services.embedding_service import EmbeddingService, get_embedding_service
 from app.services.vector_service import VectorService, get_vector_service
@@ -85,6 +86,50 @@ class RetrievalService:
             query=query,
             top_k=top_k,
             results=results,
+        )
+
+
+    def retrieve_policy_aware(
+        self,
+        query: str,
+        top_k: int = 3,
+        user: Optional[Any] = None,
+        db: Optional[Session] = None,
+    ) -> "RetrievalResponse":
+        """
+        Policy-Aware RAG retrieval path (Phase 4).
+
+        Evaluates the authenticated DB User against active Policy rows to obtain
+        a PolicyDecision.  If access is denied, raises PermissionError.
+        If allowed, passes the generated Qdrant Filter to retrieve_chunks() so
+        only authorized documents are returned.
+
+        The baseline retrieve_chunks() method remains completely unfiltered.
+
+        Args:
+            query: The natural-language query string.
+            top_k: Maximum number of chunks to return.
+            user:  Authenticated User ORM object (from DB – never from client payload).
+            db:    SQLAlchemy Session used to load policies.
+
+        Raises:
+            ValueError:       If user or db are not provided.
+            PermissionError:  If no matching ALLOW policy exists for the user.
+        """
+        if user is None or db is None:
+            raise ValueError("user and db session are required for policy-aware retrieval.")
+
+        # Import here to avoid circular imports
+        from app.services.policy_service import PolicyService
+
+        decision = PolicyService(db).evaluate(user)
+        if not decision.allowed:
+            raise PermissionError(decision.reason)
+
+        return self.retrieve(
+            query=query,
+            top_k=top_k,
+            query_filter=decision.qdrant_filter,
         )
 
 

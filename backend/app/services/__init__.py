@@ -15,6 +15,7 @@ from app.services.document_service import (
 )
 from app.services.vector_service import VectorService, get_vector_service
 from app.services.retrieval_service import RetrievalService, get_retrieval_service
+from app.services.policy_service import PolicyService, PolicyDecision
 
 __all__ = [
     "authenticate_user",
@@ -33,4 +34,6 @@ __all__ = [
     "get_vector_service",
     "RetrievalService",
     "get_retrieval_service",
+    "PolicyService",
+    "PolicyDecision",
 ]
