@@ -6,6 +6,19 @@ from app.schemas.auth import (
     TokenPayload,
     SubjectContext,
 )
+from app.schemas.document import (
+    DocumentBase,
+    DocumentCreate,
+    DocumentResponse,
+    DocumentChunkResponse,
+    IngestionSummary,
+)
+from app.schemas.rag import (
+    RetrievedChunk,
+    RetrievedChunkMetadata,
+    RetrievalQuery,
+    RetrievalResponse,
+)
 
 __all__ = [
     "UserCreate",
@@ -14,4 +27,13 @@ __all__ = [
     "Token",
     "TokenPayload",
     "SubjectContext",
+    "DocumentBase",
+    "DocumentCreate",
+    "DocumentResponse",
+    "DocumentChunkResponse",
+    "IngestionSummary",
+    "RetrievedChunk",
+    "RetrievedChunkMetadata",
+    "RetrievalQuery",
+    "RetrievalResponse",
 ]
