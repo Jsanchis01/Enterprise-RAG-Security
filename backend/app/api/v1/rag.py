@@ -25,6 +25,8 @@ from app.schemas.generation import (
     SecurityValidationSummaryResponse,
 )
 from app.services.rag_service import RAGService, RAGResponse
+from app.services.audit_service import AuditService
+from app.services.security_event_service import SecurityEventService
 
 router = APIRouter(prefix="/rag", tags=["RAG Generation"])
 
@@ -120,6 +122,106 @@ def rag_query(
             user=current_user,
             db=db,
         )
+
+    # ------------------------------------------------------------------
+    # Phase 6: Security telemetry and tamper-evident audit logging
+    # ------------------------------------------------------------------
+
+    security_summary = response.security_summary
+
+    # Determine the audit policy decision.
+    if mode == "baseline":
+        policy_decision = "BASELINE_UNFILTERED"
+    elif security_summary and not security_summary.input_validation_allowed:
+        policy_decision = "DENY_INPUT_SECURITY"
+    elif security_summary and security_summary.integrity_failures > 0:
+        policy_decision = "PARTIAL_CONTEXT_REJECT"
+    elif security_summary and security_summary.injection_failures > 0:
+        policy_decision = "PARTIAL_CONTEXT_REJECT"
+    else:
+        policy_decision = "ALLOW"
+
+    # Record security events for policy-aware security failures.
+    if mode == "policy_aware" and security_summary:
+        if not security_summary.input_validation_allowed:
+            SecurityEventService.record_event(
+                db,
+                event_type="DIRECT_PROMPT_INJECTION",
+                severity="HIGH",
+                pipeline_mode=mode,
+                trigger_payload="Direct prompt-injection attempt detected.",
+                detection_mechanism="rule_based_input_validation",
+                mitigation_action="QUERY_BLOCKED",
+                user_id=current_user.id,
+                details={
+                    "reason": security_summary.input_validation_reason,
+                },
+            )
+
+        if security_summary.injection_failures > 0:
+            SecurityEventService.record_event(
+                db,
+                event_type="CONTEXT_INJECTION",
+                severity="HIGH",
+                pipeline_mode=mode,
+                trigger_payload="Retrieved context contained an indirect prompt-injection pattern.",
+                detection_mechanism="rule_based_context_validation",
+                mitigation_action="CHUNKS_REJECTED",
+                user_id=current_user.id,
+                details={
+                    "injection_failures": security_summary.injection_failures,
+                    "rejected_chunk_ids": security_summary.rejected_chunk_ids,
+                },
+            )
+
+        if security_summary.integrity_failures > 0:
+            SecurityEventService.record_event(
+                db,
+                event_type="INTEGRITY_FAILURE",
+                severity="CRITICAL",
+                pipeline_mode=mode,
+                trigger_payload="Retrieved chunk failed SHA-256 integrity validation.",
+                detection_mechanism="sha256_content_hash_validation",
+                mitigation_action="CHUNKS_REJECTED",
+                user_id=current_user.id,
+                details={
+                    "integrity_failures": security_summary.integrity_failures,
+                    "rejected_chunk_ids": security_summary.rejected_chunk_ids,
+                },
+            )
+
+    # Record every completed RAG request for the research audit dataset.
+    AuditService.create_audit_log(
+        db,
+        user_id=current_user.id,
+        role=current_user.role.value
+        if hasattr(current_user.role, "value")
+        else str(current_user.role),
+        clearance_level=int(current_user.clearance_level),
+        pipeline_mode=mode,
+        query_text=response.query,
+        retrieved_chunk_ids=[
+            chunk.chunk_id for chunk in response.retrieved_chunks
+        ],
+        filtered_chunk_ids=response.rejected_chunk_ids,
+        policy_decision=policy_decision,
+        response_text=response.answer,
+        latency_ms=response.latency_ms,
+        event_type=(
+            "SECURITY_EVENT"
+            if (
+                security_summary
+                and (
+                    not security_summary.input_validation_allowed
+                    or security_summary.integrity_failures > 0
+                    or security_summary.injection_failures > 0
+                )
+            )
+            else "STANDARD_QUERY"
+        ),
+    )
+
+    db.commit()
 
     return RAGQueryResponse(
         answer=response.answer,
